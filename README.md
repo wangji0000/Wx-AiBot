@@ -38,19 +38,17 @@ pip install -r requirements.txt
 ### 4\. 配置
  
 1.  在项目根目录下打开 `config.ini` 文件，填写 DeepSeek API Key：
-    
-    
     ```
     [API]
-key = 12312313
+    key = 12312313
     ```
 2.  在 `users.txt` 文件中添加需要监听的好友或群聊名称，每行一个名称：
-    
     
     ```
     好友A
     群聊B
     ```
+    
  
 ### 5\. 运行项目
  
