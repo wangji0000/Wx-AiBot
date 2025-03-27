@@ -1,6 +1,5 @@
 # DeepSeek 微信智能聊天机器人
 
-![Snipaste_2025-02-15_22-18-39.jpg](assets%2FSnipaste_2025-02-15_22-18-39.jpg)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![GitHub stars](https://img.shields.io/github/stars/yourusername/deepseek-wechat-bot?style=social)
@@ -33,7 +32,7 @@ cd Wx-AiBot
 
  
 ```
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
  
 ### 4\. 配置
