@@ -4,31 +4,71 @@ import requests
 import json
 from wxauto import WeChat
 
+# 获取程序运行路径
+def get_resource_path(relative_path):
+    """获取资源的绝对路径，适用于开发环境和PyInstaller打包后的环境"""
+    try:
+        # PyInstaller创建临时文件夹，将路径存储在_MEIPASS中
+        base_path = sys._MEIPASS
+    except Exception:
+        # 不打包时直接使用当前路径
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 # 获取配置文件
 config = configparser.RawConfigParser()
-with open('conf.ini', 'r', encoding='utf-8') as f:
+config_path = get_resource_path('conf.ini')
+with open(config_path, 'r', encoding='utf-8') as f:
     config.read_file(f)
 
 # 读取users.txt加载监听用户
-MONITOR_LIST = []
-if not os.path.exists("users.txt"):
-    fp = open("users.txt", encoding="utf-8", mode='w')
-    fp.close()
-else:
-    fp = open("users.txt", encoding="utf-8", mode='r')
-    for line in fp:
-        line = line.strip()
-        if not line:
-            continue
-        MONITOR_LIST.append(line)
-    fp.close()
+def load_monitor_list():
+    """加载监听用户列表，允许动态更新"""
+    monitor_list = []
+    users_path = 'users.txt'  # 使用相对路径，保持在exe同目录
+    if not os.path.exists(users_path):
+        fp = open(users_path, encoding="utf-8", mode='w')
+        fp.close()
+    else:
+        fp = open(users_path, encoding="utf-8", mode='r')
+        for line in fp:
+            line = line.strip()
+            if not line:
+                continue
+            monitor_list.append(line)
+        fp.close()
+    return monitor_list
+
+# 初始化监听列表
+MONITOR_LIST = load_monitor_list()
 
 # 1.打开微信
 wx = WeChat()
 
 # 2.监听账户列表（好友名称）
-for ele in MONITOR_LIST:
-    wx.AddListenChat(who=ele, savepic=True)
+def update_listen_chats():
+    """更新监听的聊天列表"""
+    # 重新创建 WeChat 实例，确保完全重置监听状态
+    global wx
+    wx = WeChat()
+    
+    # 重新加载监听列表
+    global MONITOR_LIST
+    MONITOR_LIST = load_monitor_list()
+    
+    # 添加监听
+    for ele in MONITOR_LIST:
+        wx.AddListenChat(who=ele, savepic=True)
+    print("已更新监听用户列表")
+
+# 初始化监听
+update_listen_chats()
+
+# 刷新监听列表的函数（可以定期调用）
+def refresh_monitor_list():
+    """刷新监听列表，用于动态更新配置"""
+    update_listen_chats()
+    print("已刷新监听用户列表")
 
 
 # 3.监听消息
@@ -272,6 +312,9 @@ def send_msg(chat, content):
 
 
 def listen_and_reply():
+    # 监听消息前先刷新一次配置
+    refresh_monitor_list()
+    refresh_counter = 0
     while True:
         msgs = wx.GetListenMessage()
         for chat in msgs:
@@ -281,8 +324,21 @@ def listen_and_reply():
                     continue
                 print(msg)
                 content = msg.content
+
+                # 特殊命令：刷新配置
+                if content.strip() == "刷新配置":
+                    refresh_monitor_list()
+                    chat.SendMsg("已刷新监听用户列表")
+                    continue
+
                 # 发送消息
                 send_msg(chat, content)
+                
+        # 每处理100次消息后自动刷新一次配置
+        refresh_counter += 1
+        if refresh_counter >= 100:
+            refresh_monitor_list()
+            refresh_counter = 0
 
 
 listen_and_reply()

@@ -104,7 +104,11 @@ deepseek-wechat-bot/
 *   `requests`: 用于发送 HTTP 请求，调用 DeepSeek API。
     
 *   `configparser`: 打开配置文件。
-    
+
+
+打包
+安装 PyInstaller 如果你还没有安装：   pip install pyinstaller
+打包命令（基本版本）：   pyinstaller --onefile --windowed app.py
  
 免责声明
 ----
