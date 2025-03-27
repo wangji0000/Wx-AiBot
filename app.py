@@ -65,7 +65,7 @@ def deepseek_stream(content, chat):
     full_response = ""
     # 存储当前片段，当达到一定长度时发送
     current_chunk = ""
-    chunk_size = 30  # 每次发送约30个字符
+    chunk_size = 1000  # 每次发送约1000个字符
     
     # 处理流式响应
     for line in response.iter_lines():
@@ -85,8 +85,9 @@ def deepseek_stream(content, chat):
                         delta = json_data["choices"][0].get("delta", {})
                         if "content" in delta:
                             content_piece = delta["content"]
-                            full_response += content_piece
-                            current_chunk += content_piece
+                            if content_piece is not None:
+                                full_response += content_piece
+                                current_chunk += content_piece
                             
                             # 当当前块达到一定大小时发送
                             if len(current_chunk) >= chunk_size:
@@ -96,7 +97,7 @@ def deepseek_stream(content, chat):
                     print(f"无法解析JSON: {line}")
                     continue
     
-    print('完整ai回答：', full_response)
+    print('deepseek智能AI流式回答：', full_response)
     return full_response
 
 
@@ -132,7 +133,7 @@ def deepseek(content):
 
 
     content = data['choices'][0]['message']['content']
-    print('ai回答：', content)
+    print('deepseek智能AI回答：', content)
 
     return content
 
@@ -159,7 +160,7 @@ def xq_stream(content, chat):
         full_response = ""
         # 存储当前片段，当达到一定长度时发送
         current_chunk = ""
-        chunk_size = 100  # 每次发送约100个字符
+        chunk_size = 1000  # 每次发送约1000个字符
         
         # 用于去重的变量
         last_sent_chunk = ""
@@ -196,11 +197,6 @@ def xq_stream(content, chat):
                         chat.SendMsg(current_chunk)
                         last_sent_chunk = current_chunk
                     break
-                
-                # 检查是否已经处理过相同的数据
-                if data in processed_data:
-                    print(f"跳过重复数据: {data[:30]}...")
-                    continue
                 
                 processed_data.add(data)
                     
@@ -264,14 +260,14 @@ def xq_stream(content, chat):
     if current_chunk and current_chunk != last_sent_chunk:
         chat.SendMsg(current_chunk)
     
-    print('完整ai回答：', full_response)
+    print('新腔科技智能AI回答：', full_response)
     return full_response
 
 
 def send_msg(chat, content):
     # 根据需要选择不同的API
-    # deepseek_stream(content, chat)  # DeepSeek流式API
-    # chat.SendMsg(deepseek(content))  # DeepSeek非流式API
+    #deepseek_stream(content, chat)  # DeepSeek流式API
+    #chat.SendMsg(deepseek(content))  # DeepSeek非流式API
     xq_stream(content, chat)  # 新的SSE流式API
 
 

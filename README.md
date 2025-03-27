@@ -106,27 +106,6 @@ deepseek-wechat-bot/
 *   `configparser`: 打开配置文件。
     
  
-开源协议
-----
- 
-本项目基于 [MIT License](https://chat.deepseek.com/a/chat/s/LICENSE) 开源。
- 
-
-    
- 
-联系作者
-----
- 
-如有问题或建议，请联系：
- 
-*   邮箱: 2480419172@qq.com
-    
-*   GitHub: [小廉](https://github.com/2423560192)
-    
- 
-* * *
- 
- 
 免责声明
 ----
  
