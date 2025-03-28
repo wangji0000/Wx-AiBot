@@ -2,25 +2,57 @@ import configparser
 import os
 import requests
 import json
+import sys
 from wxauto import WeChat
 
-# 获取程序运行路径
 def get_resource_path(relative_path):
-    """获取资源的绝对路径，适用于开发环境和PyInstaller打包后的环境"""
-    try:
-        # PyInstaller创建临时文件夹，将路径存储在_MEIPASS中
-        base_path = sys._MEIPASS
-    except Exception:
-        # 不打包时直接使用当前路径
-        base_path = os.path.abspath(".")
+    """ 获取资源的绝对路径 """
+    if getattr(sys, 'frozen', False):
+        # 打包后，sys.executable是EXE路径
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # 开发时，使用当前文件路径
+        base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-# 获取配置文件
-config = configparser.RawConfigParser()
-config_path = get_resource_path('conf.ini')
-with open(config_path, 'r', encoding='utf-8') as f:
-    config.read_file(f)
+# 读取users.txt
+users_path = get_resource_path("users.txt")
+if not os.path.exists(users_path):
+    with open(users_path, "w", encoding='utf-8') as f:
+        f.write(" ") 
 
+with open(users_path, "r", encoding='utf-8') as f:
+    users = f.read().splitlines()
+
+# 获取配置文件
+config_path = get_resource_path('conf.ini')
+config = configparser.ConfigParser()
+if not os.path.exists(config_path):
+    if not os.path.exists(config_path):
+        config["DEFAULT"] = {
+            "debug_mode": False,
+            "max_connections": "10",
+            "log_path": "logs/AiBot.log"
+        }
+        config["API"] = {
+            "baseUrl": "https://api.deepseek.com",
+            "key": "sk-003d5efa9dd14ef382d8a238b7341107",
+            "model": "deepseek-reasoner",
+            "max_tokens": "512",
+            "temperature": "0.7",
+            "top_k": "5",
+            "frequency_penalty": "0.5"
+        }
+        config["INTERFACEAPI"] = {
+            "baseUrl": "https://apollo-api-dev.18qjz.cn",
+            "type": "1",
+        }
+        with open(config_path, "w", encoding="utf-8") as f:
+            config.write(f)
+
+with open(config_path, "r", encoding='utf-8') as f:
+    config.read(config_path, encoding="utf-8")
+    
 # 读取users.txt加载监听用户
 def load_monitor_list():
     """加载监听用户列表，允许动态更新"""
@@ -38,6 +70,16 @@ def load_monitor_list():
             monitor_list.append(line)
         fp.close()
     return monitor_list
+
+def load_config():
+    """ 动态加载配置文件（支持热更新） """
+    config_path = get_resource_path("conf.ini")
+    # 读取最新配置
+    config.read(config_path, encoding="utf-8")
+    return config
+
+# 全局配置对象（需定期调用 reload_config() 刷新）
+config = load_config()
 
 # 初始化监听列表
 MONITOR_LIST = load_monitor_list()
@@ -64,19 +106,26 @@ def update_listen_chats():
 # 初始化监听
 update_listen_chats()
 
+
+def reload_config():
+    global config
+    config = load_config()
+    print("配置已刷新")
+
+
 # 刷新监听列表的函数（可以定期调用）
 def refresh_monitor_list():
     """刷新监听列表，用于动态更新配置"""
     update_listen_chats()
-    print("已刷新监听用户列表")
-
+    reload_config()
 
 # 3.监听消息
 def deepseek_stream(content, chat):
     """使用流式API获取DeepSeek响应并发送消息"""
-    url = "https://api.deepseek.com/v1/chat/completions"
+    base_url = config['API']['baseUrl']
+    url = f"{base_url}/v1/chat/completions"
     payload = {
-        "model": "deepseek-reasoner",
+        "model": config['API']['model'],
         "messages": [
             {
                 "role": "user",
@@ -84,13 +133,10 @@ def deepseek_stream(content, chat):
             }
         ],
         "stream": True,
-        "max_tokens": 512,
-        "stop": ["null"],
-        "temperature": 0.7,
-        "top_p": 0.7,
-        "top_k": 50,
-        "frequency_penalty": 0.5,
-        "n": 1,
+        "max_tokens": int(config['API']['max_tokens']),
+        "temperature": float(config['API']['temperature']),
+        "top_k": int(config['API']['top_k']),
+        "frequency_penalty": float(config['API']['frequency_penalty']),
         "response_format": {"type": "text"},
     }
     headers = {
@@ -99,43 +145,62 @@ def deepseek_stream(content, chat):
     }
 
     # 使用stream=True参数进行流式请求
-    response = requests.request("POST", url, json=payload, headers=headers, stream=True)
-    
-    # 存储完整回复以便打印日志
-    full_response = ""
-    # 存储当前片段，当达到一定长度时发送
-    current_chunk = ""
-    chunk_size = 1000  # 每次发送约1000个字符
-    
-    # 处理流式响应
-    for line in response.iter_lines():
-        if line:
-            # 移除 "data: " 前缀并解析JSON
-            line = line.decode('utf-8')
-            if line.startswith("data: "):
-                if line == "data: [DONE]":
-                    # 发送剩余内容
-                    if current_chunk:
-                        chat.SendMsg(current_chunk)
-                    break
-                
-                try:
-                    json_data = json.loads(line[6:])  # 去除 "data: " 前缀
-                    if "choices" in json_data and len(json_data["choices"]) > 0:
-                        delta = json_data["choices"][0].get("delta", {})
-                        if "content" in delta:
-                            content_piece = delta["content"]
-                            if content_piece is not None:
-                                full_response += content_piece
-                                current_chunk += content_piece
-                            
-                            # 当当前块达到一定大小时发送
-                            if len(current_chunk) >= chunk_size:
-                                chat.SendMsg(current_chunk)
-                                current_chunk = ""
-                except json.JSONDecodeError:
-                    print(f"无法解析JSON: {line}")
-                    continue
+    try:
+        response = requests.request("POST", url, json=payload, headers=headers, stream=True)
+        if response.status_code != 200:
+            print(f"请求失败，状态码: {response.status_code}")
+            chat.SendMsg(f"请求失败，状态码: {response.status_code}")
+            return None
+
+        # 存储完整回复以便打印日志
+        full_response = ""
+        # 存储当前片段，当达到一定长度时发送
+        current_chunk = ""
+        chunk_size = 200  # 每次发送约200个字符
+        
+        # 处理流式响应
+        for line in response.iter_lines():
+            if line:
+                # 移除 "data: " 前缀并解析JSON
+                line = line.decode('utf-8')
+                if line.startswith("data: "):
+                    if line == "data: [DONE]":
+                        # 发送剩余内容
+                        if current_chunk:
+                            chat.SendMsg(current_chunk)
+                        break
+                    
+                    try:
+                        json_data = json.loads(line[6:])  # 去除 "data: " 前缀
+                        if "choices" in json_data and len(json_data["choices"]) > 0:
+                            delta = json_data["choices"][0].get("delta", {})
+                            if "content" in delta:
+                                content_piece = delta["content"]
+                                if content_piece is not None:
+                                    full_response += content_piece
+                                    current_chunk += content_piece
+                                
+                                # 当当前块达到一定大小时发送
+                                if len(current_chunk) >= chunk_size:
+                                    chat.SendMsg(current_chunk)
+                                    current_chunk = ""
+                    except json.JSONDecodeError:
+                        print(f"无法解析JSON: {line}")
+                        continue
+    except requests.RequestException as e:
+        error_msg = f"请求错误: {str(e)}"
+        print(error_msg)
+        chat.SendMsg(error_msg)
+        return error_msg
+    except Exception as e:
+        error_msg = f"处理SSE流时发生错误: {str(e)}"
+        print(error_msg)
+        # 发送已累积的内容
+        if current_chunk and current_chunk != last_sent_chunk:
+            chat.SendMsg(current_chunk)
+        # 发送错误信息给用户
+        chat.SendMsg(f"处理回复时出错: {str(e)}")
+        return error_msg                
     
     print('deepseek智能AI流式回答：', full_response)
     return full_response
@@ -143,9 +208,11 @@ def deepseek_stream(content, chat):
 
 def deepseek(content):
     """非流式API，保留原有功能"""
-    url = "https://api.deepseek.com/v1/chat/completions"
+    base_url = config['API']['baseUrl']
+    url = f"{base_url}/v1/chat/completions"
+
     payload = {
-        "model": "deepseek-reasoner",
+        "model": config['API']['model'],
         "messages": [
             {
                 "role": "user",
@@ -153,34 +220,49 @@ def deepseek(content):
             }
         ],
         "stream": False,
-        "max_tokens": 512,
-        "stop": ["null"],
-        "temperature": 0.7,
-        "top_p": 0.7,
-        "top_k": 50,
-        "frequency_penalty": 0.5,
-        "n": 1,
-        "response_format": {"type": "text"},
+        "max_tokens": int(config['API']['max_tokens']),
+        "temperature": float(config['API']['temperature']),
+        "top_k": int(config['API']['top_k']),
+        "frequency_penalty": float(config['API']['frequency_penalty']),
+        "response_format": {"type": "text"}
     }
+
     headers = {
         "Authorization": f"Bearer {config['API']['key']}",
         "Content-Type": "application/json"
     }
 
-    response = requests.request("POST", url, json=payload, headers=headers)
+    try:
+        response = requests.request("POST", url, json=payload, headers=headers)
+        response.raise_for_status()  # 检查HTTP状态码
+    except requests.exceptions.HTTPError as e:
+        error_msg = f"HTTP错误: {e}\n响应内容: {response.text}"
+        print(error_msg)
+        return error_msg
+    except requests.exceptions.RequestException as e:
+        error_msg = f"请求失败: {e}"
+        print(error_msg)
+        return error_msg
 
-    data = response.json()
-
-
-    content = data['choices'][0]['message']['content']
-    print('deepseek智能AI回答：', content)
-
-    return content
+    try:
+        data = response.json()
+        content = data['choices'][0]['message']['content']
+        print('deepseek智能AI回答：', content)
+        return content
+    except json.JSONDecodeError:
+        error_msg = f"JSON解析失败！原始响应内容：\n{response.text}"
+        print(error_msg)
+        return error_msg
+    except KeyError:
+        error_msg = f"响应格式异常！原始数据：\n{data}"
+        print(error_msg)
+        return error_msg
 
 def xq_stream(content, chat):
     """处理服务器发送事件(SSE)流式响应"""
-    url = "https://apollo-api-dev.18qjz.cn/apollo/test/ai/chat?message=" + content
-    
+    base_url = config['INTERFACEAPI']['baseUrl']
+    url = f"{base_url}/apollo/test/ai/chat?message={content}"
+
     headers = {
         "Accept": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -200,7 +282,7 @@ def xq_stream(content, chat):
         full_response = ""
         # 存储当前片段，当达到一定长度时发送
         current_chunk = ""
-        chunk_size = 1000  # 每次发送约1000个字符
+        chunk_size = 200  # 每次发送约200个字符
         
         # 用于去重的变量
         last_sent_chunk = ""
@@ -304,17 +386,18 @@ def xq_stream(content, chat):
     return full_response
 
 
-def send_msg(chat, content):
-    # 根据需要选择不同的API
-    #deepseek_stream(content, chat)  # DeepSeek流式API
-    #chat.SendMsg(deepseek(content))  # DeepSeek非流式API
-    xq_stream(content, chat)  # 新的SSE流式API
+def send_msg(chat, content, type):   
+    if type == 2:
+        deepseek_stream(content, chat)  # DeepSeek流式API
+    elif type == 3:
+        chat.SendMsg(deepseek(content))  # DeepSeek非流式API
+    else:
+        xq_stream(content, chat) # 新的SSE流式API    
 
 
 def listen_and_reply():
     # 监听消息前先刷新一次配置
     refresh_monitor_list()
-    refresh_counter = 0
     while True:
         msgs = wx.GetListenMessage()
         for chat in msgs:
@@ -328,17 +411,10 @@ def listen_and_reply():
                 # 特殊命令：刷新配置
                 if content.strip() == "刷新配置":
                     refresh_monitor_list()
-                    chat.SendMsg("已刷新监听用户列表")
+                    print("已刷新监听用户列表")
                     continue
 
                 # 发送消息
-                send_msg(chat, content)
+                send_msg(chat, content, int(config['INTERFACEAPI']['type']))
                 
-        # 每处理100次消息后自动刷新一次配置
-        refresh_counter += 1
-        if refresh_counter >= 100:
-            refresh_monitor_list()
-            refresh_counter = 0
-
-
 listen_and_reply()
