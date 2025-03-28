@@ -27,6 +27,7 @@ with open(users_path, "r", encoding='utf-8') as f:
 # 获取配置文件
 config_path = get_resource_path('conf.ini')
 config = configparser.ConfigParser()
+
 if not os.path.exists(config_path):
     if not os.path.exists(config_path):
         config["DEFAULT"] = {
@@ -36,7 +37,7 @@ if not os.path.exists(config_path):
         }
         config["API"] = {
             "baseUrl": "https://api.deepseek.com",
-            "key": "sk-003d5efa9dd14ef382d8a238b7341107",
+            "key": '',
             "model": "deepseek-reasoner",
             "max_tokens": "512",
             "temperature": "0.7",
@@ -44,15 +45,15 @@ if not os.path.exists(config_path):
             "frequency_penalty": "0.5"
         }
         config["INTERFACEAPI"] = {
-            "baseUrl": "https://apollo-api-dev.18qjz.cn",
+            "baseUrl": '',
             "type": "1",
         }
         with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
 
 with open(config_path, "r", encoding='utf-8') as f:
-    config.read(config_path, encoding="utf-8")
-    
+    config.read(config_path, encoding="utf-8") 
+
 # 读取users.txt加载监听用户
 def load_monitor_list():
     """加载监听用户列表，允许动态更新"""
@@ -76,6 +77,13 @@ def load_config():
     config_path = get_resource_path("conf.ini")
     # 读取最新配置
     config.read(config_path, encoding="utf-8")
+    # 检查并处理[API].key为空的情况
+    api_key = config.get('API', 'key').strip()
+    if not api_key:
+        config.set('API', 'key', 'sk-003d5efa9dd14ef382d8a238b7341107')
+    interface_base_url = config.get('INTERFACEAPI', 'baseUrl').strip()
+    if not interface_base_url:
+        config.set('INTERFACEAPI', 'baseUrl', 'https://apollo-api-dev.18qjz.cn')    
     return config
 
 # 全局配置对象（需定期调用 reload_config() 刷新）
@@ -274,7 +282,7 @@ def xq_stream(content, chat):
         response = requests.get(url, headers=headers, stream=True)
         
         if response.status_code != 200:
-            print(f"请求失败，状态码: {response.status_code}")
+            print(f"请求失败，状态码: {response.status_code}, url: {url}")
             chat.SendMsg(f"请求失败，状态码: {response.status_code}")
             return None
             
