@@ -40,19 +40,34 @@ if not os.path.exists(config_path):
             "key": '',
             "model": "deepseek-reasoner",
             "max_tokens": "512",
-            "temperature": "0.7",
-            "top_k": "5",
-            "frequency_penalty": "0.5"
+            "temperature": "0.8",
+            "top_k": "3"
         }
         config["INTERFACEAPI"] = {
             "baseUrl": '',
             "type": "1",
+            "env": "dev"
         }
         with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
 
 with open(config_path, "r", encoding='utf-8') as f:
     config.read(config_path, encoding="utf-8") 
+
+def save_token(token):
+    """保存token到本地文件"""
+    token_path = get_resource_path("token.txt")
+    with open(token_path, "w", encoding="utf-8") as f:
+        f.write(token)
+
+def load_token():
+    """从本地加载token"""
+    token_path = get_resource_path("token.txt")
+    if not os.path.exists(token_path):
+        return None
+    with open(token_path, "r", encoding="utf-8") as f:
+        return f.read().strip()
+
 
 # 读取users.txt加载监听用户
 def load_monitor_list():
@@ -83,7 +98,11 @@ def load_config():
         config.set('API', 'key', 'sk-003d5efa9dd14ef382d8a238b7341107')
     interface_base_url = config.get('INTERFACEAPI', 'baseUrl').strip()
     if not interface_base_url:
-        config.set('INTERFACEAPI', 'baseUrl', 'https://apollo-api-dev.18qjz.cn')    
+        env = config.get('INTERFACEAPI', 'env').strip()
+        url = "https://apollo-api-dev.18qjz.cn".strip()
+        if env == 'pro':
+            url = "https://apollo-api.18qjz.cn".strip()
+        config.set('INTERFACEAPI', 'baseUrl', url)    
     return config
 
 # 全局配置对象（需定期调用 reload_config() 刷新）
@@ -144,7 +163,6 @@ def deepseek_stream(content, chat):
         "max_tokens": int(config['API']['max_tokens']),
         "temperature": float(config['API']['temperature']),
         "top_k": int(config['API']['top_k']),
-        "frequency_penalty": float(config['API']['frequency_penalty']),
         "response_format": {"type": "text"},
     }
     headers = {
@@ -164,7 +182,9 @@ def deepseek_stream(content, chat):
         full_response = ""
         # 存储当前片段，当达到一定长度时发送
         current_chunk = ""
-        chunk_size = 200  # 每次发送约200个字符
+        chunk_size = 200  # 
+        # 用于去重的变量
+        last_sent_chunk = ""
         
         # 处理流式响应
         for line in response.iter_lines():
@@ -174,8 +194,9 @@ def deepseek_stream(content, chat):
                 if line.startswith("data: "):
                     if line == "data: [DONE]":
                         # 发送剩余内容
-                        if current_chunk:
+                        if current_chunk and current_chunk != last_sent_chunk:
                             chat.SendMsg(current_chunk)
+                            last_sent_chunk = current_chunk
                         break
                     
                     try:
@@ -189,8 +210,9 @@ def deepseek_stream(content, chat):
                                     current_chunk += content_piece
                                 
                                 # 当当前块达到一定大小时发送
-                                if len(current_chunk) >= chunk_size:
+                                if len(current_chunk) >= chunk_size and current_chunk != last_sent_chunk:
                                     chat.SendMsg(current_chunk)
+                                    last_sent_chunk = current_chunk
                                     current_chunk = ""
                     except json.JSONDecodeError:
                         print(f"无法解析JSON: {line}")
@@ -231,7 +253,6 @@ def deepseek(content):
         "max_tokens": int(config['API']['max_tokens']),
         "temperature": float(config['API']['temperature']),
         "top_k": int(config['API']['top_k']),
-        "frequency_penalty": float(config['API']['frequency_penalty']),
         "response_format": {"type": "text"}
     }
 
@@ -269,17 +290,22 @@ def deepseek(content):
 def xq_stream(content, chat):
     """处理服务器发送事件(SSE)流式响应"""
     base_url = config['INTERFACEAPI']['baseUrl']
-    url = f"{base_url}/apollo/test/ai/chat?message={content}"
+    url = f"{base_url}/apollo/chat?message={content}"
+    token = load_token()
+    payload = {
+         "message" : content
+    }
 
     headers = {
         "Accept": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
+        "Connection": "keep-alive",
+        "x-m-token": token
     }
     
     try:
         # 使用stream=True参数进行流式请求
-        response = requests.get(url, headers=headers, stream=True)
+        response = requests.request("POST", url, json=payload, headers=headers)
         
         if response.status_code != 200:
             print(f"请求失败，状态码: {response.status_code}, url: {url}")
@@ -291,10 +317,9 @@ def xq_stream(content, chat):
         # 存储当前片段，当达到一定长度时发送
         current_chunk = ""
         chunk_size = 200  # 每次发送约200个字符
-        
         # 用于去重的变量
         last_sent_chunk = ""
-        processed_data = set()  # 存储已处理的数据，避免重复处理
+        current_event = None  # 用于跟踪SSE事件类型
         
         # 检查响应是否有iter_lines方法
         if not hasattr(response, 'iter_lines'):
@@ -307,19 +332,29 @@ def xq_stream(content, chat):
         for line in response.iter_lines():
             if not line:
                 continue
-                
+              
             try:
                 line = line.decode('utf-8')
             except (UnicodeDecodeError, AttributeError):
                 # 如果解码失败或line不是bytes类型
                 print(f"无法解码行: {type(line)}")
                 continue
-                
+            if line.startswith('event:'):
+                event_part = line.split(':', 1)
+                current_event = event_part[1].strip() if len(event_part) > 1 else None   
+                continue    
             # SSE格式通常是 "data: {内容}"
             if line.startswith('data:'):
                 # 提取data后的内容
                 data = line[5:].strip()
-                
+                if not data:
+                    continue
+
+                if current_event == 'token':
+                    save_token(data)
+                    current_event = None
+                    continue   
+
                 # 如果是结束标记则退出
                 if data == '[DONE]':
                     # 发送剩余内容
@@ -327,8 +362,6 @@ def xq_stream(content, chat):
                         chat.SendMsg(current_chunk)
                         last_sent_chunk = current_chunk
                     break
-                
-                processed_data.add(data)
                     
                 try:
                     # 尝试解析JSON (如果API返回JSON格式)
@@ -371,6 +404,10 @@ def xq_stream(content, chat):
                         chat.SendMsg(current_chunk)
                         last_sent_chunk = current_chunk
                         current_chunk = ""
+
+            if line == "":
+                current_event = None  
+
     except requests.RequestException as e:
         error_msg = f"请求错误: {str(e)}"
         print(error_msg)
