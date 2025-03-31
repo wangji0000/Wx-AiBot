@@ -46,7 +46,7 @@ if not os.path.exists(config_path):
         config["INTERFACEAPI"] = {
             "baseUrl": '',
             "type": "1",
-            "env": "dev"
+            "env": 'pro'
         }
         with open(config_path, "w", encoding="utf-8") as f:
             config.write(f)
