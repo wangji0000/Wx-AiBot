@@ -89,3 +89,5 @@ python AiBot.py
 window系统: Remove-Item -Recurse -Force build, dist
 
 Unix/Linux系统:  rm -rf build dist
+
+句柄打包命令： python -m PyInstaller --onefile WindowHandleName.py

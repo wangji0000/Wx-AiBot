@@ -3,7 +3,8 @@ import os
 import requests
 import json
 import sys
-from wxauto import WeChat
+import DynamicWeChat
+#from wxauto import WeChat
 
 def get_resource_path(relative_path):
     """ 获取资源的绝对路径 """
@@ -112,14 +113,16 @@ config = load_config()
 MONITOR_LIST = load_monitor_list()
 
 # 1.打开微信
-wx = WeChat()
+#wx = WeChat()
+wx = DynamicWeChat.DynamicWeChat()
 
 # 2.监听账户列表（好友名称）
 def update_listen_chats():
     """更新监听的聊天列表"""
     # 重新创建 WeChat 实例，确保完全重置监听状态
     global wx
-    wx = WeChat()
+    #wx = WeChat()
+    wx = DynamicWeChat.DynamicWeChat()
     
     # 重新加载监听列表
     global MONITOR_LIST
