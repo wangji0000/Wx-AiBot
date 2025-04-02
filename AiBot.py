@@ -4,7 +4,11 @@ import requests
 import json
 import sys
 import DynamicWeChat
+import config_logger
 #from wxauto import WeChat
+
+# ================ 初始化日志记录器 ================
+logger = config_logger.setup_logger()
 
 def get_resource_path(relative_path):
     """ 获取资源的绝对路径 """
@@ -115,6 +119,7 @@ MONITOR_LIST = load_monitor_list()
 # 1.打开微信
 #wx = WeChat()
 wx = DynamicWeChat.DynamicWeChat()
+logger.info("微信句柄: %s", wx._get_wechat_class_name())
 
 # 2.监听账户列表（好友名称）
 def update_listen_chats():
@@ -131,7 +136,7 @@ def update_listen_chats():
     # 添加监听
     for ele in MONITOR_LIST:
         wx.AddListenChat(who=ele, savepic=True)
-    print("已更新监听用户列表")
+    logger.info("已更新监听用户列表")
 
 # 初始化监听
 update_listen_chats()
@@ -140,7 +145,7 @@ update_listen_chats()
 def reload_config():
     global config
     config = load_config()
-    print("配置已刷新")
+    logger.info("配置已刷新")
 
 
 # 刷新监听列表的函数（可以定期调用）
@@ -177,8 +182,7 @@ def deepseek_stream(content, chat):
     try:
         response = requests.request("POST", url, json=payload, headers=headers, stream=True)
         if response.status_code != 200:
-            print(f"请求失败，状态码: {response.status_code}")
-            chat.SendMsg(f"请求失败，状态码: {response.status_code}")
+            logger.error(f"请求失败，状态码: {response.status_code}")
             return None
 
         # 存储完整回复以便打印日志
@@ -218,24 +222,22 @@ def deepseek_stream(content, chat):
                                     last_sent_chunk = current_chunk
                                     current_chunk = ""
                     except json.JSONDecodeError:
-                        print(f"无法解析JSON: {line}")
+                        logger.error(f"无法解析JSON: {line}")
                         continue
     except requests.RequestException as e:
         error_msg = f"请求错误: {str(e)}"
-        print(error_msg)
-        chat.SendMsg(error_msg)
+        logger.error(error_msg)
         return error_msg
     except Exception as e:
         error_msg = f"处理SSE流时发生错误: {str(e)}"
-        print(error_msg)
+        logger.error(error_msg)
         # 发送已累积的内容
         if current_chunk and current_chunk != last_sent_chunk:
             chat.SendMsg(current_chunk)
         # 发送错误信息给用户
-        chat.SendMsg(f"处理回复时出错: {str(e)}")
         return error_msg                
     
-    print('deepseek智能AI流式回答：', full_response)
+    logger.info('deepseek智能AI流式回答：%s', full_response)
     return full_response
 
 
@@ -269,25 +271,25 @@ def deepseek(content):
         response.raise_for_status()  # 检查HTTP状态码
     except requests.exceptions.HTTPError as e:
         error_msg = f"HTTP错误: {e}\n响应内容: {response.text}"
-        print(error_msg)
+        logger.error(error_msg)
         return error_msg
     except requests.exceptions.RequestException as e:
         error_msg = f"请求失败: {e}"
-        print(error_msg)
+        logger.error(error_msg)
         return error_msg
 
     try:
         data = response.json()
         content = data['choices'][0]['message']['content']
-        print('deepseek智能AI回答：', content)
+        logger.info('deepseek智能AI回答：%s', content)
         return content
     except json.JSONDecodeError:
         error_msg = f"JSON解析失败！原始响应内容：\n{response.text}"
-        print(error_msg)
+        logger.error(error_msg)
         return error_msg
     except KeyError:
         error_msg = f"响应格式异常！原始数据：\n{data}"
-        print(error_msg)
+        logger.error(error_msg)
         return error_msg
 
 def xq_stream(content, chat):
@@ -311,8 +313,7 @@ def xq_stream(content, chat):
         response = requests.request("POST", url, json=payload, headers=headers)
         
         if response.status_code != 200:
-            print(f"请求失败，状态码: {response.status_code}, url: {url}")
-            chat.SendMsg(f"请求失败，状态码: {response.status_code}")
+            logger.error(f"请求失败，状态码: {response.status_code}, url: {url}")
             return None
             
         # 存储完整回复以便打印日志
@@ -326,9 +327,8 @@ def xq_stream(content, chat):
         
         # 检查响应是否有iter_lines方法
         if not hasattr(response, 'iter_lines'):
-            print("响应对象没有iter_lines方法")
+            logger.error("响应对象没有iter_lines方法")
             error_msg = "API响应格式不支持流式处理"
-            chat.SendMsg(error_msg)
             return error_msg
         
         # 处理SSE流
@@ -340,7 +340,7 @@ def xq_stream(content, chat):
                 line = line.decode('utf-8')
             except (UnicodeDecodeError, AttributeError):
                 # 如果解码失败或line不是bytes类型
-                print(f"无法解码行: {type(line)}")
+                logger.error(f"无法解码行: {type(line)}")
                 continue
             if line.startswith('event:'):
                 event_part = line.split(':', 1)
@@ -413,24 +413,22 @@ def xq_stream(content, chat):
 
     except requests.RequestException as e:
         error_msg = f"请求错误: {str(e)}"
-        print(error_msg)
-        chat.SendMsg(error_msg)
+        logger.error(error_msg)
         return error_msg
     except Exception as e:
         error_msg = f"处理SSE流时发生错误: {str(e)}"
-        print(error_msg)
+        logger.error(error_msg)
         # 发送已累积的内容
         if current_chunk and current_chunk != last_sent_chunk:
             chat.SendMsg(current_chunk)
         # 发送错误信息给用户
-        chat.SendMsg(f"处理回复时出错: {str(e)}")
         return error_msg
     
     # 确保发送最后的内容块
     if current_chunk and current_chunk != last_sent_chunk:
         chat.SendMsg(current_chunk)
     
-    print('新腔科技智能AI回答：', full_response)
+    logger.info('新腔科技智能AI回答：%s', full_response)
     return full_response
 
 
@@ -453,13 +451,13 @@ def listen_and_reply():
             for msg in one_msgs:
                 if msg.type == 'time' or msg.type == 'self' or msg.type == 'sys':
                     continue
-                print(msg)
+                logger.info(msg)
                 content = msg.content
 
                 # 特殊命令：刷新配置
                 if content.strip() == "刷新配置":
                     refresh_monitor_list()
-                    print("已刷新监听用户列表")
+                    logger.info("已刷新监听用户列表")
                     continue
 
                 # 发送消息
