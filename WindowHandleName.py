@@ -5,6 +5,8 @@ def enum_windows_callback(hwnd, _):
     title = win32gui.GetWindowText(hwnd)
     if "微信" in title or "WeChat" in title:
         print(f"句柄: {hwnd}, 类名: {class_name}, 标题: {title}")
+        rect = win32gui.GetWindowRect(hwnd)
+        print(f"可见句柄: {hwnd}, 类名: {class_name}, 标题: {title}, 窗口尺寸: {rect}")
 
 win32gui.EnumWindows(enum_windows_callback, None)
 

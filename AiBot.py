@@ -119,7 +119,6 @@ MONITOR_LIST = load_monitor_list()
 # 1.打开微信
 #wx = WeChat()
 wx = DynamicWeChat.DynamicWeChat()
-logger.info("微信句柄: %s", wx._get_wechat_class_name())
 
 # 2.监听账户列表（好友名称）
 def update_listen_chats():
